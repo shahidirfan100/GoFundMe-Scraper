@@ -7,10 +7,12 @@ Use it for lead generation, fundraising trend research, donation momentum tracki
 ## Features
 
 - **Keyword and URL workflows** - Run with a search keyword or paste a full GoFundMe search URL.
+- **Location-only support** - Run with just a location to collect nearby or regional fundraiser results.
 - **Location-aware collection** - Narrow discovery using city, country, or coordinates.
 - **Pagination control** - Define result volume with `results_wanted` and `max_pages`.
 - **Clean dataset output** - Stores structured records without empty or null-only fields.
 - **Production-safe defaults** - Ready for daily runs, monitoring tasks, and scheduled jobs.
+- **Resilient search continuity** - Automatically recovers search connectivity during provider-side credential rotations.
 
 ## Use Cases
 
@@ -174,6 +176,9 @@ Yes. Provide `url` and the actor will use it directly.
 ### Can I run this scraper with only a keyword?
 Yes. Provide `keyword` and it will search from the main fundraiser search flow.
 
+### Can I run this scraper with only a location?
+Yes. Provide `location` and the actor can collect location-focused fundraiser results even without a keyword.
+
 ### What happens if I provide both `url` and `keyword`?
 The `url` input is used first to preserve that exact search context.
 
@@ -185,6 +190,9 @@ Public campaign data can vary by listing. The actor saves only available fields 
 
 ### Is this suitable for scheduled daily monitoring?
 Yes. The actor is designed for recurring runs with consistent, structured output.
+
+### What if search connectivity changes on the source side?
+The actor includes automatic recovery logic to keep runs stable when search provider credentials rotate.
 
 ---
 

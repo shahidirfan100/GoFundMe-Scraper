@@ -49,7 +49,7 @@
       "description": "Optional proxy setup for search requests.",
       "editor": "proxy",
       "default": {
-        "useApifyProxy": true
+        "useApifyProxy": false
       }
     }
   },

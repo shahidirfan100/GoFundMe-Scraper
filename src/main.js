@@ -4,10 +4,11 @@ import { Actor, log } from 'apify';
 import { Dataset } from 'crawlee';
 import { gotScraping } from 'got-scraping';
 
-const ALGOLIA_APP_ID = 'E7PHE9BB38';
-const ALGOLIA_API_KEY = '2a43f30c25e7719436f10fed6d788170';
+const DEFAULT_ALGOLIA_APP_ID = 'E7PHE9BB38';
+const DEFAULT_ALGOLIA_API_KEY = '2a43f30c25e7719436f10fed6d788170';
 const ALGOLIA_INDEX = 'prod_funds_feed_replica_1';
-const ALGOLIA_URL = `https://${ALGOLIA_APP_ID.toLowerCase()}-2.algolianet.com/1/indexes/*/queries`;
+const DEFAULT_SEARCH_URL = 'https://www.gofundme.com/s/fundraisers';
+
 const DEFAULT_RESULTS_WANTED = 20;
 const DEFAULT_MAX_PAGES = 5;
 const HITS_PER_PAGE = 16;
@@ -218,6 +219,193 @@ const mapFundraiser = ({ hit, query, page, rank }) => {
     return cleanRecord(normalized);
 };
 
+const buildAlgoliaHosts = (appId) => {
+    const prefix = String(appId || '').toLowerCase();
+    return [
+        `${prefix}-2.algolianet.com`,
+        `${prefix}-dsn.algolia.net`,
+        `${prefix}-1.algolianet.com`,
+    ];
+};
+
+const extractAlgoliaCredentialsFromText = (text) => {
+    if (!text) return undefined;
+
+    const appMatch = text.match(/ALGOLIA_SEARCH_APP_ID\|\|"([A-Z0-9]+)"/i)
+        || text.match(/x-algolia-application-id(?:=|%3D)([A-Z0-9]+)/i);
+
+    const keyMatch = text.match(/ALGOLIA_SEARCH_API_KEY\|\|"([a-z0-9]{20,})"/i)
+        || text.match(/x-algolia-api-key(?:=|%3D)([a-z0-9]{20,})/i);
+
+    if (!appMatch || !keyMatch) return undefined;
+
+    return {
+        appId: appMatch[1],
+        apiKey: keyMatch[1],
+    };
+};
+
+const extractBundleUrls = (html, baseUrl) => {
+    const scriptSrcRegex = /<script[^>]+src="([^"]+)"/gi;
+    const urls = [];
+    let match;
+
+    while ((match = scriptSrcRegex.exec(html)) !== null) {
+        const src = match[1];
+        try {
+            urls.push(new URL(src, baseUrl).toString());
+        } catch {
+            // ignore malformed URLs
+        }
+    }
+
+    const unique = [...new Set(urls)];
+    const prioritized = unique.filter((url) => /\/chunks\/pages\/_app-/i.test(url));
+    const secondary = unique.filter((url) => /\/_next\/static\/chunks\//i.test(url) && !/\/chunks\/pages\/_app-/i.test(url));
+
+    return [...prioritized, ...secondary].slice(0, 12);
+};
+
+const buildSearchPageUrl = ({ startUrl, query }) => {
+    if (startUrl) return startUrl;
+
+    const u = new URL(DEFAULT_SEARCH_URL);
+    if (query) u.searchParams.set('q', query);
+    return u.toString();
+};
+
+const discoverAlgoliaCredentials = async ({ startUrl, query, proxyUrl }) => {
+    const searchPageUrl = buildSearchPageUrl({ startUrl, query });
+
+    let html;
+    try {
+        const pageResponse = await gotScraping.get(searchPageUrl, {
+            proxyUrl,
+            headers: {
+                'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'accept-language': 'en-US,en;q=0.9',
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
+            },
+            timeout: { request: 45000 },
+        });
+        html = pageResponse.body || '';
+    } catch (error) {
+        log.warning(`Credential refresh page fetch failed: ${error.message}`);
+        return undefined;
+    }
+
+    const fromHtml = extractAlgoliaCredentialsFromText(html);
+    if (fromHtml) return { ...fromHtml, source: 'page_html' };
+
+    const bundleUrls = extractBundleUrls(html, searchPageUrl);
+    for (const bundleUrl of bundleUrls) {
+        try {
+            const bundleResponse = await gotScraping.get(bundleUrl, {
+                proxyUrl,
+                headers: {
+                    'accept': '*/*',
+                    'accept-language': 'en-US,en;q=0.9',
+                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
+                    'referer': searchPageUrl,
+                },
+                timeout: { request: 45000 },
+            });
+
+            const creds = extractAlgoliaCredentialsFromText(bundleResponse.body || '');
+            if (creds) return { ...creds, source: 'app_bundle' };
+        } catch {
+            // continue with next bundle
+        }
+    }
+
+    return undefined;
+};
+
+const isAlgoliaAuthFailure = ({ statusCode, bodyText }) => {
+    if (statusCode === 401 || statusCode === 403) return true;
+
+    if (!bodyText) return false;
+    return /invalid application-id|api key|forbidden|unauthorized/i.test(bodyText);
+};
+
+const createAlgoliaClient = ({ startUrl, query, proxyConfiguration }) => {
+    const state = {
+        appId: DEFAULT_ALGOLIA_APP_ID,
+        apiKey: DEFAULT_ALGOLIA_API_KEY,
+        source: 'default',
+    };
+
+    const refresh = async () => {
+        const proxyUrl = proxyConfiguration ? await proxyConfiguration.newUrl() : undefined;
+        const discovered = await discoverAlgoliaCredentials({ startUrl, query, proxyUrl });
+        if (!discovered) return false;
+
+        if (state.appId === discovered.appId && state.apiKey === discovered.apiKey) return false;
+
+        state.appId = discovered.appId;
+        state.apiKey = discovered.apiKey;
+        state.source = discovered.source;
+        log.warning(`Refreshed search credentials from ${discovered.source}.`);
+        return true;
+    };
+
+    const fetchResults = async ({ requestBody, referer }) => {
+        let refreshed = false;
+
+        for (let attempt = 0; attempt < 2; attempt++) {
+            const hosts = buildAlgoliaHosts(state.appId);
+
+            for (const host of hosts) {
+                const proxyUrl = proxyConfiguration ? await proxyConfiguration.newUrl() : undefined;
+
+                try {
+                    const response = await gotScraping.post(`https://${host}/1/indexes/*/queries`, {
+                        proxyUrl,
+                        throwHttpErrors: false,
+                        searchParams: {
+                            'x-algolia-application-id': state.appId,
+                            'x-algolia-api-key': state.apiKey,
+                        },
+                        headers: {
+                            'accept': 'application/json',
+                            'content-type': 'application/x-www-form-urlencoded',
+                            'origin': 'https://www.gofundme.com',
+                            'referer': referer,
+                            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
+                        },
+                        body: requestBody,
+                        timeout: { request: 45000 },
+                    });
+
+                    const bodyText = response.body || '';
+                    if (response.statusCode >= 200 && response.statusCode < 300) {
+                        return JSON.parse(bodyText);
+                    }
+
+                    if (isAlgoliaAuthFailure({ statusCode: response.statusCode, bodyText })) {
+                        if (!refreshed) {
+                            const changed = await refresh();
+                            refreshed = true;
+                            if (changed) break;
+                        }
+                        throw new Error(`Search auth failed (${response.statusCode})`);
+                    }
+
+                    throw new Error(`Search endpoint ${host} returned ${response.statusCode}`);
+                } catch (error) {
+                    if (attempt === 1 && host === hosts[hosts.length - 1]) {
+                        throw error;
+                    }
+                }
+            }
+        }
+
+        throw new Error('Could not fetch search results from available hosts');
+    };
+
+    return { fetchResults, refresh };
+};
+
 const main = async () => {
     const resultsWanted = toPositiveInt(input.results_wanted, DEFAULT_RESULTS_WANTED);
     const maxPages = toPositiveInt(input.max_pages, DEFAULT_MAX_PAGES);
@@ -252,6 +440,12 @@ const main = async () => {
         maxPages,
     });
 
+    const algoliaClient = createAlgoliaClient({
+        startUrl,
+        query,
+        proxyConfiguration,
+    });
+
     const uniqueIds = new Set();
     let totalSaved = 0;
 
@@ -271,36 +465,14 @@ const main = async () => {
             ],
         });
 
-        const proxyUrl = proxyConfiguration ? await proxyConfiguration.newUrl() : undefined;
-
-        let apiResponse;
+        let parsed;
         try {
-            apiResponse = await gotScraping.post(ALGOLIA_URL, {
-                proxyUrl,
-                searchParams: {
-                    'x-algolia-application-id': ALGOLIA_APP_ID,
-                    'x-algolia-api-key': ALGOLIA_API_KEY,
-                },
-                headers: {
-                    'accept': 'application/json',
-                    'content-type': 'application/x-www-form-urlencoded',
-                    'origin': 'https://www.gofundme.com',
-                    'referer': startUrl || 'https://www.gofundme.com/s/fundraisers',
-                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
-                },
-                body: requestBody,
-                timeout: { request: 45000 },
+            parsed = await algoliaClient.fetchResults({
+                requestBody,
+                referer: startUrl || DEFAULT_SEARCH_URL,
             });
         } catch (error) {
             log.error(`Request failed on page ${page + 1}: ${error.message}`);
-            break;
-        }
-
-        let parsed;
-        try {
-            parsed = JSON.parse(apiResponse.body);
-        } catch {
-            log.error(`Non-JSON API response on page ${page + 1}`);
             break;
         }
 
