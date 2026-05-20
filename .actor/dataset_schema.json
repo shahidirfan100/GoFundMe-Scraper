@@ -1,0 +1,57 @@
+{
+  "actorSpecification": 1,
+  "views": {
+    "overview": {
+      "title": "Overview",
+      "transformation": {
+        "fields": [
+          "fundraiser_id",
+          "title",
+          "organizer_name",
+          "location",
+          "amount_raised",
+          "currency",
+          "donation_count",
+          "fundraiser_url"
+        ]
+      },
+      "display": {
+        "component": "table",
+        "properties": {
+          "fundraiser_id": {
+            "label": "ID",
+            "format": "text"
+          },
+          "title": {
+            "label": "Title",
+            "format": "text"
+          },
+          "organizer_name": {
+            "label": "Organizer",
+            "format": "text"
+          },
+          "location": {
+            "label": "Location",
+            "format": "text"
+          },
+          "amount_raised": {
+            "label": "Raised",
+            "format": "number"
+          },
+          "currency": {
+            "label": "Currency",
+            "format": "text"
+          },
+          "donation_count": {
+            "label": "Donations",
+            "format": "number"
+          },
+          "fundraiser_url": {
+            "label": "URL",
+            "format": "link"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "title": "GoFundMe Fundraiser Scraper",
+  "description": "Scrape GoFundMe fundraiser search results using a GoFundMe search URL or keyword-based search with optional location filtering.",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "url": {
+      "title": "Search URL",
+      "type": "string",
+      "description": "Optional GoFundMe search URL, e.g. https://www.gofundme.com/s/fundraisers?q=medical. If provided, this input is used first.",
+      "editor": "textfield",
+      "prefill": "https://www.gofundme.com/s/fundraisers?q=medical"
+    },
+    "keyword": {
+      "title": "Keyword",
+      "type": "string",
+      "description": "Keyword to search fundraisers by title or related text (used when URL is not provided).",
+      "editor": "textfield",
+      "prefill": "medical"
+    },
+    "location": {
+      "title": "Location",
+      "type": "string",
+      "description": "Optional location like city/country (for example: New York, USA) or lat,lng (for example: 40.7128,-74.0060).",
+      "editor": "textfield",
+      "prefill": "New York, USA"
+    },
+    "results_wanted": {
+      "title": "Results wanted",
+      "type": "integer",
+      "description": "Maximum number of fundraiser records to save.",
+      "minimum": 1,
+      "default": 20,
+      "prefill": 20,
+      "editor": "number"
+    },
+    "max_pages": {
+      "title": "Max pages",
+      "type": "integer",
+      "description": "Maximum search pages to request.",
+      "minimum": 1,
+      "default": 5,
+      "prefill": 5,
+      "editor": "number"
+    },
+    "proxyConfiguration": {
+      "title": "Proxy configuration",
+      "type": "object",
+      "description": "Optional proxy setup for search requests.",
+      "editor": "proxy",
+      "default": {
+        "useApifyProxy": true
+      }
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}
