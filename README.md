@@ -1,213 +1,281 @@
-# GoFundMe Fundraiser Scraper
+## What does GoFundMe Fundraiser Scraper do?
 
-Collect fundraiser listings from GoFundMe search pages in a consistent, analysis-ready dataset. Extract fundraiser titles, organizer names, donation progress, currency, and direct fundraiser links with support for keyword queries, URL-based searches, and location-aware discovery.
+GoFundMe Fundraiser Scraper collects public fundraiser listings from GoFundMe search results and returns them as a structured dataset. Run it with a keyword, a location, or a full GoFundMe search URL to gather campaign titles, organizers, amounts raised, goals, donation counts, categories, and direct fundraiser links.
 
-Use it for lead generation, fundraising trend research, donation momentum tracking, and market monitoring across public fundraiser campaigns.
+The Actor is built for recurring data work: fundraising research, giving trend monitoring, regional campaign comparisons, and outreach lists. Each run produces clean records you can download as CSV, Excel, JSON, or XML, or send straight into a spreadsheet, database, or automation.
 
-## Features
+## Why use GoFundMe Fundraiser Scraper?
 
-- **Keyword and URL workflows** - Run with a search keyword or paste a full GoFundMe search URL.
-- **Location-only support** - Run with just a location to collect nearby or regional fundraiser results.
-- **Location-aware collection** - Narrow discovery using city, country, or coordinates.
-- **Pagination control** - Define result volume with `results_wanted` and `max_pages`.
-- **Clean dataset output** - Stores structured records without empty or null-only fields.
-- **Production-safe defaults** - Ready for daily runs, monitoring tasks, and scheduled jobs.
-- **Resilient search continuity** - Automatically recovers search connectivity during provider-side credential rotations.
+- One row per campaign, with organizer, location, amounts, donation count, category, and description in the same record.
+- Three ways to search: keyword, location, or a GoFundMe search URL with its filters intact.
+- Recurring runs stay comparable because field names and search modes do not change between runs.
+- Results are saved page by page, so a later request failure does not discard pages already collected.
+- The default search runs without any input, so you can inspect the output before configuring a real query.
 
-## Use Cases
+## What data can you extract from GoFundMe?
 
-### Fundraising Trend Monitoring
-Track which fundraising themes are growing and which causes attract sustained donor interest. Build recurring snapshots to monitor changes over time.
+| Field                | Description                                          |
+| -------------------- | ---------------------------------------------------- |
+| `fundraiser_id`      | GoFundMe campaign identifier                         |
+| `fundraiser_slug`    | Campaign slug used in the GoFundMe URL               |
+| `fundraiser_url`     | Direct link to the fundraiser page                   |
+| `title`              | Campaign title                                       |
+| `organizer_name`     | Organizer display name                               |
+| `beneficiary_name`   | Beneficiary name when the campaign lists one         |
+| `location`           | Campaign location such as city and state             |
+| `city`               | City when available                                  |
+| `state`              | State or region when available                       |
+| `country`            | Two-letter country code                              |
+| `amount_raised`      | Amount raised so far in the campaign currency        |
+| `real_balance`       | Current balance reported for the campaign            |
+| `goal_amount`        | Fundraising goal                                     |
+| `amount_to_goal`     | Amount still needed to reach the goal                |
+| `goal_progress`      | Progress ratio where 1 means 100 percent of the goal |
+| `donation_count`     | Total donations recorded                             |
+| `currency`           | Currency code such as USD, GBP, or EUR               |
+| `description`        | Full campaign description text                       |
+| `category_id`        | GoFundMe category identifier                         |
+| `cause_category_ids` | Related cause category identifiers                   |
+| `charity_name`       | Linked charity name when the campaign has one        |
+| `image_url`          | Main campaign image URL                              |
+| `created_at`         | Campaign creation time in ISO format                 |
+| `last_donation_at`   | Most recent donation time in ISO format              |
+| `search_query`       | Keyword used for the run                             |
+| `page`               | Search result page where the campaign appeared       |
+| `rank_on_page`       | Position on that page                                |
+| `scraped_at`         | Time the record was saved                            |
 
-### Competitive Benchmarking
-Compare campaign traction across different regions and categories. Review donation momentum and fundraiser positioning with normalized fields.
+## How to use GoFundMe Fundraiser Scraper
 
-### Lead Discovery
-Find active campaigns and organizer profiles for outreach, partnerships, or nonprofit intelligence workflows.
+1. Open the Actor on Apify Store.
+2. Choose one search mode: enter a keyword, enter a location, or paste a GoFundMe search URL.
+3. Set `results_wanted` and `max_pages` to control run size.
+4. Start the run.
+5. Review the dataset, then download it or connect it to your workflow.
 
-### Market Research
-Analyze donation behavior, campaign naming patterns, and localization differences for strategic planning.
+Search modes have a fixed priority. A keyword is used first. If no keyword is supplied, a location is used. If neither is supplied, the URL field is used. The URL field also carries the default search, so you can leave every field empty and still get a working sample run.
 
----
+### Keyword search
+
+Use a keyword when you want campaigns about a cause, a person, or an event. Broad terms return more results, while specific phrases return closer matches.
+
+### Location search
+
+Use a location when you want campaigns near a place. City names, regions, countries, and `lat,lng` coordinates are accepted. If the location cannot be resolved, the run continues without a location filter and logs a warning instead of failing.
+
+### URL search
+
+Paste a GoFundMe search URL to reuse an exact search, including filters that the site adds to its own URLs. The Actor reads `q`, `location-description`, `location-lat`, and `location-lng` from the URL.
+
+### Keyword with location
+
+Supply both fields to combine a topic with a place, for example `cancer` in New York. This is the most precise mode for regional research.
 
 ## Input Parameters
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `url` | String | No | `"https://www.gofundme.com/s/fundraisers?q=medical"` | Full GoFundMe search URL. If present, this is used first. |
-| `keyword` | String | No | `"medical"` | Search term used when `url` is not provided. |
-| `location` | String | No | `"New York, USA"` | Optional location (city/country or `lat,lng`) for location-aware results. |
-| `results_wanted` | Integer | No | `20` | Maximum number of records to save. |
-| `max_pages` | Integer | No | `5` | Maximum number of pages to process. |
-| `proxyConfiguration` | Object | No | `{ "useApifyProxy": true }` | Optional proxy configuration for reliable access. |
+| Parameter            | Type    | Required | Default                                            | Description                                                                         |
+| -------------------- | ------- | -------- | -------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `url`                | String  | No       | `https://www.gofundme.com/s/fundraisers?q=medical` | Full GoFundMe search URL. Used only when no keyword or location is supplied.        |
+| `keyword`            | String  | No       | -                                                  | Search term for fundraiser titles and related text. Highest priority.               |
+| `location`           | String  | No       | -                                                  | City, region, country, or `lat,lng`. Combines with a keyword and overrides the URL. |
+| `results_wanted`     | Integer | No       | `20`                                               | Maximum number of fundraiser records to save.                                       |
+| `max_pages`          | Integer | No       | `5`                                                | Maximum result pages to request. Each page holds up to 16 campaigns.                |
+| `proxyConfiguration` | Object  | No       | `{ "useApifyProxy": false }`                       | Optional proxy setup. Leave disabled for normal runs.                               |
 
----
+`results_wanted` stops the run once enough records are saved. `max_pages` limits how far the search walks through results, even if the result target is higher.
 
 ## Output Data
 
-Each dataset item includes standardized campaign details and source fields.
+Every record uses the same field names. Empty fields are removed rather than stored as null, so a campaign with no listed beneficiary simply omits `beneficiary_name`.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `fundraiser_id` | String | Unique fundraiser identifier. |
-| `title` | String | Fundraiser title. |
-| `organizer_name` | String | Organizer display name. |
-| `beneficiary_name` | String | Beneficiary name when available. |
-| `location` | String | Campaign location text when available. |
-| `amount_raised` | Number | Amount raised in campaign currency. |
-| `amount_to_goal` | Number | Remaining amount to reach goal. |
-| `goal_progress` | Number | Progress ratio toward campaign goal. |
-| `currency` | String | Currency code. |
-| `donation_count` | Number | Donation count. |
-| `fundraiser_slug` | String | Campaign slug. |
-| `fundraiser_url` | String | Direct fundraiser URL. |
-| `search_query` | String | Query used for the run. |
-| `page` | Number | Search page number where result was collected. |
-| `rank_on_page` | Number | Position within that page. |
-| `scraped_at` | String | ISO timestamp when the record was saved. |
-
----
+The dataset is also available through the default Apify dataset API and the Overview tab, which shows the campaign ID, title, organizer, location, amount raised, goal, currency, donation count, and fundraiser link.
 
 ## Usage Examples
 
-### Example 1: Basic Keyword Search
+### Basic keyword search
+
+Collect 50 medical fundraisers across up to four pages.
 
 ```json
 {
-  "keyword": "medical",
-  "results_wanted": 50,
-  "max_pages": 5
+    "keyword": "medical",
+    "results_wanted": 50,
+    "max_pages": 4
 }
 ```
 
-### Example 2: URL-Based Search
+### Location-only search
+
+Collect campaigns near New York without a keyword.
 
 ```json
 {
-  "url": "https://www.gofundme.com/s/fundraisers?q=education",
-  "results_wanted": 40,
-  "max_pages": 4
+    "location": "New York, USA",
+    "results_wanted": 30,
+    "max_pages": 2
 }
 ```
 
-### Example 3: Keyword + Location Search
+### Keyword with coordinates
+
+Combine a topic with exact coordinates for a tighter geographic search.
 
 ```json
 {
-  "keyword": "accident",
-  "location": "Los Angeles, USA",
-  "results_wanted": 30,
-  "max_pages": 6,
-  "proxyConfiguration": {
-    "useApifyProxy": true
-  }
+    "keyword": "animal rescue",
+    "location": "34.0522,-118.2437",
+    "results_wanted": 40,
+    "max_pages": 3
 }
 ```
 
----
+### Reuse a GoFundMe search URL
+
+Run a search URL with its own filters and result count.
+
+```json
+{
+    "url": "https://www.gofundme.com/s/fundraisers?q=education",
+    "results_wanted": 32,
+    "max_pages": 2
+}
+```
+
+### Larger monitored run
+
+Collect a larger set for a scheduled weekly snapshot.
+
+```json
+{
+    "keyword": "emergency",
+    "location": "Texas, USA",
+    "results_wanted": 200,
+    "max_pages": 13,
+    "proxyConfiguration": {
+        "useApifyProxy": true
+    }
+}
+```
 
 ## Sample Output
 
 ```json
 {
-  "fundraiser_id": "96987861",
-  "title": "Support Brandon Buckingham's Medical Recovery",
-  "organizer_name": "Brandon Buckingham",
-  "amount_raised": 342525,
-  "amount_to_goal": 0,
-  "goal_progress": 4.567,
-  "currency": "USD",
-  "donation_count": 11028,
-  "fundraiser_slug": "support-brandon-buckinghams-medical-recovery",
-  "fundraiser_url": "https://www.gofundme.com/f/support-brandon-buckinghams-medical-recovery",
-  "search_query": "medical",
-  "page": 1,
-  "rank_on_page": 1,
-  "scraped_at": "2026-05-20T16:00:00.000Z"
+    "objectID": "96987861",
+    "url": "support-brandon-buckinghams-medical-recovery",
+    "fundname": "Support Brandon Buckingham's Medical Recovery",
+    "username": "Brandon Buckingham",
+    "balance": 343108,
+    "goal_progress": 4.574773333333333,
+    "amount_to_goal": 0,
+    "donation_count_full": 11044,
+    "currencycode": "USD",
+    "thumb_img_url": "https://images.gofundme.com/example/720x405/example.png",
+    "fundraiser_id": "96987861",
+    "fundraiser_slug": "support-brandon-buckinghams-medical-recovery",
+    "fundraiser_url": "https://www.gofundme.com/f/support-brandon-buckinghams-medical-recovery",
+    "title": "Support Brandon Buckingham's Medical Recovery",
+    "organizer_name": "Brandon Buckingham",
+    "location": "Stephenville, TX",
+    "city": "Stephenville",
+    "state": "TX",
+    "country": "US",
+    "amount_raised": 343108,
+    "real_balance": 343108,
+    "goal_amount": 75000,
+    "donation_count": 11044,
+    "currency": "USD",
+    "description": "Campaign description text as published on the fundraiser page.",
+    "category_id": 11,
+    "cause_category_ids": [8, 77, 74, 13, 104],
+    "image_url": "https://d2g8igdw686xgo.cloudfront.net/example_r.png",
+    "created_at": "2025-11-22T18:05:15.000Z",
+    "last_donation_at": "2026-10-25T00:23:04.000Z",
+    "search_query": "medical",
+    "page": 1,
+    "rank_on_page": 1,
+    "scraped_at": "2026-10-28T06:17:18.590Z"
 }
 ```
 
----
+The raw fields at the top are kept for continuity with earlier versions of this Actor. The normalized fields below them are the ones most workflows should use.
 
 ## Tips for Best Results
 
-### Start Small Then Scale
-- Start with `results_wanted: 20` and `max_pages: 3` to validate quickly.
-- Increase limits after confirming output quality for your target search.
-
-### Use Precise Search Terms
-- Specific keywords typically produce cleaner campaign sets.
-- Try multiple focused runs instead of one broad query.
-
-### Improve Consistency With Proxy
-- Enable proxy configuration for repeated production runs.
-- Use the same input profile for scheduled monitoring to keep data comparable.
-
-### Prefer Full Search URLs For Repeatability
-- URL-based runs preserve search context and filters.
-- Reusing tested URLs helps keep recurring exports consistent.
-
----
+1. Run with `results_wanted: 20` and `max_pages: 2` first, then raise both for the real collection.
+2. Narrow terms produce cleaner campaign sets than a single broad word.
+3. Use `lat,lng` coordinates when a city name is ambiguous or shared by several places.
+4. Keep `max_pages` in step with `results_wanted`: each page holds up to 16 campaigns, so 100 results need at least 7 pages.
+5. Schedule daily or weekly runs when donation growth matters more than a one-time snapshot.
+6. Reuse the same keyword, location, and limits across runs so exports stay comparable.
+7. Expect variation between records. Campaigns publish different details, and a missing field usually means the organizer left it blank.
 
 ## Integrations
 
-Connect output with:
+- **Google Sheets** - Push fundraiser snapshots into shared sheets for review.
+- **Airtable** - Build a searchable campaign database with categories and locations.
+- **Make** - Trigger follow-up steps when a run finishes.
+- **Zapier** - Connect new fundraiser records to other business tools.
+- **Webhooks** - Send results to your own services after each run.
+- **Apify API** - Pull datasets programmatically for dashboards or models.
 
-- **Google Sheets** - Share fundraiser snapshots with teams.
-- **Airtable** - Build searchable fundraising intelligence bases.
-- **Make** - Trigger downstream workflows and notifications.
-- **Zapier** - Connect campaign updates to business systems.
-- **Webhooks** - Send results to custom pipelines.
+### Export formats
 
-### Export Formats
-
-- **JSON** - Application and backend workflows.
-- **CSV** - Spreadsheet analysis.
-- **Excel** - Reporting and stakeholder sharing.
-- **XML** - Legacy system integration.
-
----
+- **JSON** - Best for applications, APIs, and AI pipelines.
+- **CSV** - Best for spreadsheet analysis.
+- **Excel** - Best for reporting and stakeholder review.
+- **XML** - Best for older systems that expect XML feeds.
 
 ## Frequently Asked Questions
 
-### Can I run this scraper with only a URL?
-Yes. Provide `url` and the actor will use it directly.
+### Can I run this Actor with only a keyword?
 
-### Can I run this scraper with only a keyword?
-Yes. Provide `keyword` and it will search from the main fundraiser search flow.
+Yes. Enter a keyword and leave `url` and `location` empty. The Actor searches that term and ignores the default URL.
 
-### Can I run this scraper with only a location?
-Yes. Provide `location` and the actor can collect location-focused fundraiser results even without a keyword.
+### Can I run this Actor with only a location?
 
-### What happens if I provide both `url` and `keyword`?
-The `url` input is used first to preserve that exact search context.
+Yes. Enter a location and leave `keyword` and `url` empty. The Actor returns campaigns scoped to that place, with no keyword restriction.
 
-### Can I limit total runtime and result size?
-Yes. Use `results_wanted` and `max_pages` together to control run size.
+### What happens when I supply both a keyword and a URL?
 
-### Why do some records have fewer fields?
-Public campaign data can vary by listing. The actor saves only available fields for each result.
+The keyword wins. The URL is ignored, including any query string or location parameters it contains.
 
-### Is this suitable for scheduled daily monitoring?
-Yes. The actor is designed for recurring runs with consistent, structured output.
+### What happens when I supply both a keyword and a location?
 
-### What if search connectivity changes on the source side?
-The actor includes automatic recovery logic to keep runs stable when search provider credentials rotate.
+Both are used. The keyword narrows the topic and the location narrows the area.
 
----
+### How many results can one run collect?
+
+Up to the `results_wanted` limit, bounded by `max_pages` and by how many matching campaigns GoFundMe returns. Each page holds up to 16 records.
+
+### Why are some fields missing from a record?
+
+GoFundMe campaigns publish different details. A campaign without a named beneficiary or linked charity will not have those fields. Missing values are removed instead of saved as empty strings.
+
+### Can I export GoFundMe data to CSV or Excel?
+
+Yes. Apify datasets support CSV, Excel, JSON, and XML downloads from the Console and the API.
+
+### Can I schedule this Actor?
+
+Yes. Create a schedule in Apify Console to run it hourly, daily, weekly, or at a custom interval.
+
+### Does it work for fundraisers outside the United States?
+
+Yes. Campaigns from many countries appear in results, and `city`, `state`, and `country` show where each campaign is based. Keyword searches are global unless you add a location.
+
+### What should I do if a run returns no records?
+
+Check the keyword spelling and try a broader term. A very narrow phrase or a small town with no active campaigns can legitimately return nothing. The run log states why collection stopped.
+
+### Is it legal to collect public GoFundMe data?
+
+Collecting publicly visible fundraiser information is generally permitted for research and analysis, but you are responsible for complying with applicable laws, GoFundMe's terms, and privacy rules in your jurisdiction.
 
 ## Support
 
-For issues or feature requests, contact support through the Apify Console.
-
-### Resources
-
-- [Apify Documentation](https://docs.apify.com/)
-- [Apify API Reference](https://docs.apify.com/api/v2)
-- [Apify Scheduling](https://docs.apify.com/platform/schedules)
-
----
+For issues, feature requests, or custom Actor work, use the Issues tab on the Actor page or contact the developer through Apify.
 
 ## Legal Notice
 
-This actor is intended for lawful data collection and analysis workflows. You are responsible for ensuring your use complies with applicable laws and platform terms.
+This Actor is designed for legitimate collection of publicly available fundraiser information. Users are responsible for how they use the data and for complying with applicable laws and website terms. Do not use it to contact donors or to process personal data without a lawful basis.

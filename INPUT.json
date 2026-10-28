@@ -1,6 +1,5 @@
 {
-  "keyword": "medical",
-  "location": "New York, USA",
-  "results_wanted": 20,
-  "max_pages": 5
+    "url": "https://www.gofundme.com/s/fundraisers?q=medical",
+    "results_wanted": 20,
+    "max_pages": 2
 }
